@@ -41,7 +41,7 @@ input.amt{font-size:40px;font-weight:700;text-align:center;border:0;background:n
 <div class="w" id="app"></div>
 <div id="t" role="status"></div>
 <script>
-// 把這裡換成步驟 2 取得的 Apps Script /exec 網址
+
 const API = 'https://script.google.com/macros/s/AKfycbxV8NcqzHzyY9s1v6c-RC5_BNgy5FzFjGK6WKUzpL2M7fNFoJ16xn6sD64NLNvZlPxZpg/exec';
 
 const $ = s => document.querySelector(s);
@@ -77,9 +77,9 @@ function expire() { store.del('t'); showLogin(); }
 
 function showLogin(reg) {
   app.innerHTML = `<section><h1>家庭記帳</h1>
-  <input id="u" placeholder="帳號" autocapitalize="none" autocomplete="username">
+  <input id="u" placeholder="帳號" autocapitalize="none" autocomplete="off" spellcheck="false">
   ${reg ? '<input id="dn" placeholder="顯示名稱,例如:爸爸"><input id="ic" placeholder="邀請碼">' : ''}
-  <input id="pw" type="password" placeholder="密碼,至少 6 個字元" autocomplete="${reg ? 'new-password' : 'current-password'}">
+  <input id="pw" type="password" placeholder="密碼,至少 6 個字元" autocomplete="off">
   <button class="p" id="go">${reg ? '註冊' : '登入'}</button>
   <p class="m" id="sw" style="text-align:center;cursor:pointer">${reg ? '已有帳號?去登入' : '還沒有帳號?去註冊'}</p></section>`;
   $('#sw').onclick = () => showLogin(!reg);
