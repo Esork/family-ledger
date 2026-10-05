@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>家庭記帳</title>
+<style>
+:root{--bg:#eef2f0;--tile:#fff;--ink:#14201c;--mut:#667570;--ac:#3b3f9e;--ln:#d5dcd8;--ex:#b4234a;--in:#0f766e}
+@media(prefers-color-scheme:dark){:root{--bg:#101615;--tile:#18201e;--ink:#e8eeeb;--mut:#8b9a94;--ac:#9aa0ff;--ln:#27312e;--ex:#ff7a95;--in:#4fd1c0}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.w{max-width:480px;margin:auto}
+section{padding:16px;border-bottom:1px solid var(--ln)}
+h1{font-size:18px;margin:0}
+.top{display:flex;justify-content:space-between;align-items:center}
+.m{color:var(--mut);font-size:13px}
+input,button{font:inherit;color:inherit}
+input{width:100%;background:var(--tile);border:1px solid var(--ln);border-radius:12px;padding:12px;margin-top:10px}
+button{background:var(--tile);border:1px solid var(--ln);border-radius:12px;padding:10px;cursor:pointer}
+:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.p{background:var(--ac);color:var(--bg);border:0;width:100%;padding:14px;font-weight:700;margin-top:14px}
+.p:disabled{opacity:.5}
+.seg{display:flex;gap:20px}
+.seg button{background:none;border:0;border-bottom:3px solid transparent;border-radius:0;padding:4px 0;font-size:18px;color:var(--mut)}
+.seg .on{color:var(--ink);border-color:var(--ac);font-weight:700}
+input.amt{font-size:40px;font-weight:700;text-align:center;border:0;background:none;border-bottom:1px solid var(--ln);border-radius:0}
+.g{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.g button{font-size:12px;padding:8px 2px}
+.g span{display:block;font-size:22px}
+.g .on,.ch .on{background:var(--ac);color:var(--bg);border-color:var(--ac)}
+.ch{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.ch button{padding:6px 14px;border-radius:99px;font-size:14px}
+.r{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--ln)}
+.r small{display:block;color:var(--mut);font-size:12px}
+.e{color:var(--ex)}.i{color:var(--in)}
+#t{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:99px;opacity:0;transition:opacity .2s;pointer-events:none}
+#t.s{opacity:1}
+</style>
+</head>
+<body>
+<div class="w" id="app"></div>
+<div id="t" role="status"></div>
+<script>
+// 把這裡換成步驟 2 取得的 Apps Script /exec 網址
+const API = 'https://script.google.com/macros/s/AKfycbxV8NcqzHzyY9s1v6c-RC5_BNgy5FzFjGK6WKUzpL2M7fNFoJ16xn6sD64NLNvZlPxZpg/exec';
+
+const $ = s => document.querySelector(s);
+const app = $('#app');
+const S = { token: null, data: null, type: 'expense', cat: null };
+const store = {
+  get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
+  del: k => { try { localStorage.removeItem(k); } catch (e) {} }
+};
+const ERR = {
+  unauthorized: '登入已過期,請重新登入', invalid_credentials: '帳號或密碼錯誤',
+  username_taken: '這個帳號已被使用', bad_invite_code: '邀請碼不正確',
+  password_too_short: '密碼至少 6 個字元', username_length: '帳號需 2 到 20 個字',
+  bad_amount: '金額不正確', bad_category: '請先選分類'
+};
+const msg = e => ERR[e.message] || '發生錯誤:' + e.message;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const key = s => String(s).normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+let tt;
+function toast(m) {
+  const e = $('#t'); e.textContent = m; e.classList.add('s');
+  clearTimeout(tt); tt = setTimeout(() => e.classList.remove('s'), 2200);
+}
+async function call(body) {
+  const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error);
+  return j.data;
+}
+function expire() { store.del('t'); showLogin(); }
+
+function showLogin(reg) {
+  app.innerHTML = `<section><h1>家庭記帳</h1>
+  <input id="u" placeholder="帳號" autocapitalize="none" autocomplete="username">
+  ${reg ? '<input id="dn" placeholder="顯示名稱,例如:爸爸"><input id="ic" placeholder="邀請碼">' : ''}
+  <input id="pw" type="password" placeholder="密碼,至少 6 個字元" autocomplete="${reg ? 'new-password' : 'current-password'}">
+  <button class="p" id="go">${reg ? '註冊' : '登入'}</button>
+  <p class="m" id="sw" style="text-align:center;cursor:pointer">${reg ? '已有帳號?去登入' : '還沒有帳號?去註冊'}</p></section>`;
+  $('#sw').onclick = () => showLogin(!reg);
+  $('#go').onclick = async () => {
+    try {
+      toast('處理中…');
+      const b = { action: reg ? 'register' : 'login', username: $('#u').value, password: $('#pw').value };
+      if (reg) { b.display_name = $('#dn').value; b.invite_code = $('#ic').value; }
+      const d = await call(b);
+      S.token = d.token; store.set('t', d.token); load();
+    } catch (e) { toast(msg(e)); }
+  };
+}
+
+async function load() {
+  try {
+    S.data = await call({ action: 'getBootstrap', token: S.token });
+    S.cat = null; showMain();
+  } catch (e) {
+    if (e.message === 'unauthorized') expire(); else { toast(msg(e)); showLogin(); }
+  }
+}
+
+function showMain() {
+  const d = S.data;
+  app.innerHTML = `<section class="top"><h1>家庭記帳</h1>
+    <span class="m">${esc(d.user.display_name)}　<span id="lo" style="text-decoration:underline;cursor:pointer">登出</span></span></section>
+  <section>
+    <div class="seg"><button data-t="expense">支出</button><button data-t="income">收入</button></div>
+    <input id="a" class="amt" inputmode="decimal" placeholder="0" aria-label="金額">
+    <div class="g" id="g"></div>
+    <input id="it" placeholder="條目:點選或自己輸入" maxlength="30"><div class="ch" id="ch"></div>
+    <input id="dt" type="date" aria-label="日期"><input id="nt" placeholder="備註(選填)" maxlength="100">
+    <button class="p" id="sv">儲存</button>
+  </section>
+  <section><b>最近帳目</b><div id="rc"></div></section>`;
+  document.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { S.type = b.dataset.t; S.cat = null; draw(); });
+  $('#it').oninput = chips;
+  $('#lo').onclick = () => { call({ action: 'logout', token: S.token }).catch(() => {}); store.del('t'); showLogin(); };
+  $('#dt').value = today();
+  $('#sv').onclick = save;
+  draw();
+}
+
+function chips() {
+  const q = key($('#it').value);
+  $('#ch').innerHTML = S.cat
+    ? S.data.items.filter(i => i.category_id === S.cat && key(i.name).includes(q)).slice(0, 12)
+        .map(i => `<button>${esc(i.name)}</button>`).join('')
+    : '<span class="m">先選一個分類</span>';
+  document.querySelectorAll('#ch button').forEach(b => b.onclick = () => { $('#it').value = b.textContent; chips(); });
+}
+
+function draw() {
+  const d = S.data;
+  document.querySelectorAll('[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === S.type));
+  $('#g').innerHTML = d.categories.filter(c => c.type === S.type).map(c =>
+    `<button data-c="${c.category_id}" class="${c.category_id === S.cat ? 'on' : ''}"><span>${esc(c.icon)}</span>${esc(c.name)}</button>`).join('');
+  document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { S.cat = b.dataset.c; draw(); });
+  chips();
+  const cat = id => d.categories.find(c => c.category_id === id) || {};
+  const who = id => (d.users.find(u => u.user_id === id) || {}).display_name || '';
+  $('#rc').innerHTML = d.recent.slice(0, 20).map(t => {
+    const c = cat(t.category_id), inc = t.type === 'income';
+    return `<div class="r"><div>${esc(c.icon || '')} ${esc(t.item_name || c.name || '')}
+      <small>${esc(t.date.slice(5))} ${esc(who(t.user_id))}</small>${t.note ? `<small>${esc(t.note)}</small>` : ''}</div>
+      <b class="${inc ? 'i' : 'e'}">${inc ? '+' : '-'}${t.amount}</b></div>`;
+  }).join('') || '<p class="m">還沒有帳目,記下第一筆吧</p>';
+}
+
+async function save() {
+  const amount = parseFloat($('#a').value);
+  if (!S.cat) return toast('請先選分類');
+  if (!(amount > 0)) return toast('請輸入金額');
+  const btn = $('#sv'); btn.disabled = true;
+  try {
+    const r = await call({ action: 'addTransaction', token: S.token, category_id: S.cat,
+      item_name: $('#it').value, amount, date: $('#dt').value, note: $('#nt').value });
+    const d = S.data, it = r.item;
+    if (it) {
+      const f = d.items.find(i => i.item_id === it.item_id);
+      if (f) f.use_count = it.use_count;
+      else d.items.push({ item_id: it.item_id, category_id: it.category_id, name: it.name, use_count: it.use_count });
+      d.items.sort((a, b) => b.use_count - a.use_count);
+    }
+    d.recent.unshift(r.transaction);
+    ['a', 'it', 'nt'].forEach(k => $('#' + k).value = '');
+    toast('已儲存'); draw();
+  } catch (e) {
+    if (e.message === 'unauthorized') expire();
+    toast(msg(e));
+  }
+  btn.disabled = false;
+}
+
+S.token = store.get('t');
+S.token ? load() : showLogin();
+</script>
+</body>
+</html>
