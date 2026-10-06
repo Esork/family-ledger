@@ -113,14 +113,24 @@ function showLogin(reg) {
   ${reg ? '<input id="dn" placeholder="顯示名稱,例如:爸爸"><input id="ic" placeholder="邀請碼">' : ''}
   <input id="pw" type="password" placeholder="密碼,至少 6 個字元" autocomplete="off">
   <button class="p" id="go">${reg ? '註冊' : '登入'}</button>
-  <p class="m" id="sw" style="text-align:center;cursor:pointer">${reg ? '已有帳號?去登入' : '還沒有帳號?去註冊'}</p></section>`;
+  <p class="m" id="sw" style="text-align:center;cursor:pointer">${reg ? '已有帳號?去登入' : '暫不開放註冊'}</p></section>`;
   $('#sw').onclick = () => showLogin(!reg);
   $('#go').onclick = async () => {
-    try {
-      const b = { action: reg ? 'register' : 'login', username: $('#u').value, password: $('#pw').value };
-      if (reg) { b.display_name = $('#dn').value; b.invite_code = $('#ic').value; }
-      const d = await run(reg ? '註冊中…' : '登入中…', () => call(b));
-      S.token = d.token; store.set('t', d.token); load();
+  try {
+    const b = { action: reg ? 'register' : 'login', username: $('#u').value, password: $('#pw').value };
+    if (reg) { b.display_name = $('#dn').value; b.invite_code = $('#ic').value; }
+    
+    // 一次 API 呼叫搞定登入 + 載入資料
+    const d = await run(reg ? '註冊中…' : '登入中…', () => call(b));
+    
+    S.token = d.token; 
+    store.set('t', d.token);
+    
+    // 直接套用回傳的初始化資料，完全不需要再發起 load()
+    S.data = d.bootstrap; 
+    S.cat = null; 
+    applyFirst(d.ledger); 
+    showMain();
     } catch (e) { toast(msg(e)); }
   };
 }
@@ -207,7 +217,7 @@ function draw() {
 
 function drawLedger() {
   const d = S.data, r = span(), s = S.sum;
-  $('#ml').textContent = S.range ? '日期範圍:' : '當前月份:';
+  $('#ml').textContent = S.range ? '日期範圍:' : '當前月份';
   $('#mb').textContent = (S.range ? `${r.from} ~ ${r.to}` : r.month) + ' ▾';
   $('#tt').textContent = fmt(S.total);
   $('#sm').innerHTML = `<span>收入 <b class="i">${fmt(s.income)}</b></span><span>開支 <b class="e">${fmt(s.expense)}</b></span><span>餘額 <b class="${s.balance < 0 ? 'e' : ''}">${fmt(s.balance)}</b></span>`;
