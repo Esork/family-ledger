@@ -15,38 +15,52 @@ h1{font-size:18px;margin:0}
 .top{display:flex;justify-content:space-between;align-items:center}
 .m{color:var(--mut);font-size:13px}
 input,button{font:inherit;color:inherit}
-input{width:100%;background:var(--tile);border:1px solid var(--ln);border-radius:12px;padding:12px;margin-top:10px}
+input{width:100%;background:var(--tile);border:2px solid var(--ln);border-radius:12px;padding:12px;margin-top:10px}
 button{background:var(--tile);border:1px solid var(--ln);border-radius:12px;padding:10px;cursor:pointer}
 :focus-visible{outline:2px solid var(--ac);outline-offset:2px}
 .p{background:var(--ac);color:var(--bg);border:0;width:100%;padding:14px;font-weight:700;margin-top:14px}
-.p:disabled{opacity:.5}
-.seg{display:flex;gap:20px}
-.seg button{background:none;border:0;border-bottom:3px solid transparent;border-radius:0;padding:4px 0;font-size:18px;color:var(--mut)}
-.seg .on{color:var(--ink);border-color:var(--ac);font-weight:700}
+.seg{display:flex;width:100%;border:1px solid var(--ln);border-radius:12px;overflow:hidden}
+.seg button{flex:1;border:0;border-radius:0;padding:14px;font-size:18px;font-weight:700;color:var(--mut)}
+.seg [data-t=expense].on{background:var(--ex);color:var(--bg)}
+.seg [data-t=income].on{background:var(--in);color:var(--bg)}
 input.amt{font-size:40px;font-weight:700;text-align:center;border:0;background:none;border-bottom:1px solid var(--ln);border-radius:0}
+.err,input.amt.err{border:2px solid var(--ex);border-radius:12px}
 .g{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.g.err{outline:2px solid var(--ex);outline-offset:4px;border:0}
 .g button{font-size:12px;padding:8px 2px}
 .g span{display:block;font-size:22px}
 .g .on,.ch .on{background:var(--ac);color:var(--bg);border-color:var(--ac)}
 .ch{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .ch button{padding:6px 14px;border-radius:99px;font-size:14px}
+.mo{position:relative;margin-top:8px}
+#mb{font-weight:700;padding:6px 12px}
+#dd{position:absolute;z-index:5;left:0;top:100%;margin-top:6px;width:min(300px,100%);background:var(--tile);border:1px solid var(--ln);border-radius:12px;padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+#dd[hidden],#rg[hidden],#ov[hidden]{display:none}
+#dd>button{display:block;width:100%;text-align:left;border:0;background:none}
+.sm{display:flex;justify-content:space-between;margin:12px 0 16px;font-size:15px}
 .r{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--ln)}
 .r small{display:block;color:var(--mut);font-size:12px}
 .e{color:var(--ex)}.i{color:var(--in)}
-#t{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:99px;opacity:0;transition:opacity .2s;pointer-events:none}
+.cue{display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;margin-top:4px;color:var(--mut);border-top:1px dashed var(--ln);background:linear-gradient(var(--ln),transparent)}
+.bob{animation:bob 1.2s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(4px)}}
+@media(prefers-reduced-motion:reduce){.bob{animation:none}}
+#ov{position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.8);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#fff;font-size:18px}
+#t{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:99px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:100}
 #t.s{opacity:1}
 </style>
 </head>
 <body>
 <div class="w" id="app"></div>
+<div id="ov" hidden role="alert" aria-live="assertive"></div>
 <div id="t" role="status"></div>
 <script>
 
 const API = 'https://script.google.com/macros/s/AKfycbxV8NcqzHzyY9s1v6c-RC5_BNgy5FzFjGK6WKUzpL2M7fNFoJ16xn6sD64NLNvZlPxZpg/exec';
-
 const $ = s => document.querySelector(s);
 const app = $('#app');
-const S = { token: null, data: null, type: 'expense', cat: null };
+const S = { token: null, data: null, type: 'expense', cat: null, range: null,
+  rows: [], offset: 0, more: false, sum: { income: 0, expense: 0, balance: 0 }, total: 0, loading: false };
 const store = {
   get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
@@ -61,7 +75,10 @@ const ERR = {
 const msg = e => ERR[e.message] || '發生錯誤:' + e.message;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const key = s => String(s).normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+const pad = n => String(n).padStart(2, '0');
+const fmt = n => Number(n).toLocaleString();
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+const spin = z => `<svg width="${z}" height="${z}" viewBox="0 0 50 50" aria-hidden="true"><circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-width="5"/><path d="M25 5a20 20 0 0 1 20 20" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur=".9s" repeatCount="indefinite"/></path></svg>`;
 let tt;
 function toast(m) {
   const e = $('#t'); e.textContent = m; e.classList.add('s');
@@ -73,7 +90,22 @@ async function call(body) {
   if (!j.ok) throw new Error(j.error);
   return j.data;
 }
+// 等待回應時:全螢幕黑色遮罩 + 轉圈圈 + 文字,使用者無法點擊其他東西
+async function run(text, fn) {
+  $('#ov').innerHTML = spin(48) + `<div>${esc(text)}</div>`; $('#ov').hidden = false;
+  try { return await fn(); } finally { $('#ov').hidden = true; }
+}
 function expire() { store.del('t'); showLogin(); }
+
+// 目前篩選區間:預設本月
+function span() {
+  if (S.range) return S.range;
+  const n = new Date(), y = n.getFullYear(), m = n.getMonth() + 1;
+  return { from: `${y}-${pad(m)}-01`, to: `${y}-${pad(m)}-${pad(new Date(y, m, 0).getDate())}`, month: `${m} 月, ${y}` };
+}
+const ledger = (offset, limit) => { const r = span();
+  return call({ action: 'getLedger', token: S.token, from: r.from, to: r.to, offset, limit }); };
+function applyFirst(l) { S.rows = l.rows; S.offset = l.rows.length; S.more = l.has_more; S.sum = l.summary; S.total = l.total_balance; }
 
 function showLogin(reg) {
   app.innerHTML = `<section><h1>家庭記帳</h1>
@@ -85,10 +117,9 @@ function showLogin(reg) {
   $('#sw').onclick = () => showLogin(!reg);
   $('#go').onclick = async () => {
     try {
-      toast('處理中…');
       const b = { action: reg ? 'register' : 'login', username: $('#u').value, password: $('#pw').value };
       if (reg) { b.display_name = $('#dn').value; b.invite_code = $('#ic').value; }
-      const d = await call(b);
+      const d = await run(reg ? '註冊中…' : '登入中…', () => call(b));
       S.token = d.token; store.set('t', d.token); load();
     } catch (e) { toast(msg(e)); }
   };
@@ -96,11 +127,16 @@ function showLogin(reg) {
 
 async function load() {
   try {
-    S.data = await call({ action: 'getBootstrap', token: S.token });
-    S.cat = null; showMain();
+    const [d, l] = await run('載入中…', () => Promise.all([call({ action: 'getBootstrap', token: S.token }), ledger(0, 10)]));
+    S.data = d; S.cat = null; applyFirst(l); showMain();
   } catch (e) {
     if (e.message === 'unauthorized') expire(); else { toast(msg(e)); showLogin(); }
   }
+}
+
+async function refresh() {
+  try { applyFirst(await run('載入中…', () => ledger(0, 10))); drawLedger(); }
+  catch (e) { if (e.message === 'unauthorized') expire(); else toast(msg(e)); }
 }
 
 function showMain() {
@@ -112,67 +148,122 @@ function showMain() {
     <input id="a" class="amt" inputmode="decimal" placeholder="0" aria-label="金額">
     <div class="g" id="g"></div>
     <input id="it" placeholder="條目:點選或自己輸入" maxlength="30"><div class="ch" id="ch"></div>
-    <input id="dt" type="date" aria-label="日期"><input id="nt" placeholder="備註(選填)" maxlength="100">
+    <input id="nt" placeholder="備註(選填)" maxlength="100">
+    <input id="dt" type="date" aria-label="日期">
     <button class="p" id="sv">儲存</button>
   </section>
-  <section><b>最近帳目</b><div id="rc"></div></section>`;
-  document.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { S.type = b.dataset.t; S.cat = null; draw(); });
-  $('#it').oninput = chips;
+  <section>
+    <div class="m">歷史總帳　<b id="tt" style="font-size:16px;color:var(--ink)"></b></div>
+    <div class="mo"><span class="m" id="ml"></span> <button id="mb"></button>
+      <div id="dd" hidden><button data-m="cur">目前月份</button><button data-m="rng">選擇日期範圍</button>
+        <div id="rg" hidden><input type="date" id="rf" aria-label="開始日期"><input type="date" id="re" aria-label="結束日期">
+        <button class="p" id="ap">套用</button></div></div></div>
+    <div class="sm" id="sm"></div>
+    <b>帳目</b><div id="rc"></div><div id="more"></div>
+  </section>`;
+  document.querySelectorAll('[data-t]').forEach(b => b.onclick = () => {
+    S.type = b.dataset.t; S.cat = null;
+    ['a', 'it', 'nt'].forEach(k => $('#' + k).value = '');   // 日期保留
+    document.querySelectorAll('.err').forEach(e => e.classList.remove('err'));
+    draw();
+  });
+  ['a', 'it'].forEach(k => $('#' + k).addEventListener('input', e => e.target.classList.remove('err')));
+  $('#it').addEventListener('input', chips);
   $('#lo').onclick = () => { call({ action: 'logout', token: S.token }).catch(() => {}); store.del('t'); showLogin(); };
   $('#dt').value = today();
   $('#sv').onclick = save;
-  draw();
+  $('#mb').onclick = e => { e.stopPropagation(); $('#dd').hidden = !$('#dd').hidden; };
+  $('[data-m=cur]').onclick = () => { S.range = null; $('#dd').hidden = true; refresh(); };
+  $('[data-m=rng]').onclick = e => {
+    e.stopPropagation(); const r = span();
+    $('#rf').value = r.from; $('#re').value = S.range ? r.to : today(); $('#rg').hidden = false;
+  };
+  $('#ap').onclick = () => {
+    const f = $('#rf').value, t = $('#re').value;
+    if (!f || !t || f > t) return toast('請選擇正確的日期範圍');
+    S.range = { from: f, to: t }; $('#dd').hidden = true; refresh();
+  };
+  new IntersectionObserver(es => { if (es[0].isIntersecting) loadMore(); }).observe($('#more'));
+  draw(); drawLedger();
 }
+document.addEventListener('click', e => { const d = $('#dd'); if (d && !e.target.closest('.mo')) d.hidden = true; });
 
 function chips() {
   const q = key($('#it').value);
   $('#ch').innerHTML = S.cat
     ? S.data.items.filter(i => i.category_id === S.cat && key(i.name).includes(q)).slice(0, 12)
-        .map(i => `<button>${esc(i.name)}</button>`).join('')
-    : '<span class="m">先選一個分類</span>';
-  document.querySelectorAll('#ch button').forEach(b => b.onclick = () => { $('#it').value = b.textContent; chips(); });
+        .map(i => `<button>${esc(i.name)}</button>`).join('') : '';
+  document.querySelectorAll('#ch button').forEach(b => b.onclick = () => {
+    $('#it').value = b.textContent; $('#it').classList.remove('err'); chips(); });
 }
 
 function draw() {
-  const d = S.data;
   document.querySelectorAll('[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === S.type));
-  $('#g').innerHTML = d.categories.filter(c => c.type === S.type).map(c =>
+  $('#g').innerHTML = S.data.categories.filter(c => c.type === S.type).map(c =>
     `<button data-c="${c.category_id}" class="${c.category_id === S.cat ? 'on' : ''}"><span>${esc(c.icon)}</span>${esc(c.name)}</button>`).join('');
-  document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { S.cat = b.dataset.c; draw(); });
+  document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { S.cat = b.dataset.c; $('#g').classList.remove('err'); draw(); });
   chips();
+}
+
+function drawLedger() {
+  const d = S.data, r = span(), s = S.sum;
+  $('#ml').textContent = S.range ? '日期範圍:' : '當前月份:';
+  $('#mb').textContent = (S.range ? `${r.from} ~ ${r.to}` : r.month) + ' ▾';
+  $('#tt').textContent = fmt(S.total);
+  $('#sm').innerHTML = `<span>收入 <b class="i">${fmt(s.income)}</b></span><span>開支 <b class="e">${fmt(s.expense)}</b></span><span>餘額 <b class="${s.balance < 0 ? 'e' : ''}">${fmt(s.balance)}</b></span>`;
   const cat = id => d.categories.find(c => c.category_id === id) || {};
   const who = id => (d.users.find(u => u.user_id === id) || {}).display_name || '';
-  $('#rc').innerHTML = d.recent.slice(0, 20).map(t => {
+  $('#rc').innerHTML = S.rows.map(t => {
     const c = cat(t.category_id), inc = t.type === 'income';
     return `<div class="r"><div>${esc(c.icon || '')} ${esc(t.item_name || c.name || '')}
       <small>${esc(t.date.slice(5))} ${esc(who(t.user_id))}</small>${t.note ? `<small>${esc(t.note)}</small>` : ''}</div>
-      <b class="${inc ? 'i' : 'e'}">${inc ? '+' : '-'}${t.amount}</b></div>`;
-  }).join('') || '<p class="m">還沒有帳目,記下第一筆吧</p>';
+      <b class="${inc ? 'i' : 'e'}">${inc ? '+' : '-'}${fmt(t.amount)}</b></div>`;
+  }).join('') || '<p class="m">這個區間沒有帳目</p>';
+  $('#more').innerHTML = S.more
+    ? `<div class="cue"><svg class="bob" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>往下滑載入更多</div>`
+    : S.rows.length ? '<p class="m" style="text-align:center">已經到底了</p>' : '';
+}
+
+async function loadMore() {
+  if (S.loading || !S.more) return;
+  S.loading = true; let ok = true;
+  $('#more').innerHTML = `<div class="cue">${spin(18)}載入中…</div>`;
+  try {
+    const l = await ledger(S.offset, 20), seen = new Set(S.rows.map(t => t.tx_id));
+    l.rows.forEach(t => seen.has(t.tx_id) || S.rows.push(t));
+    S.offset += l.rows.length; S.more = l.has_more;
+  } catch (e) { ok = false; if (e.message === 'unauthorized') return expire(); toast(msg(e)); }
+  S.loading = false; drawLedger();
+  if (ok && S.more && $('#more').getBoundingClientRect().top < innerHeight + 80) loadMore();
 }
 
 async function save() {
-  const amount = parseFloat($('#a').value);
-  if (!S.cat) return toast('請先選分類');
-  if (!(amount > 0)) return toast('請輸入金額');
-  const btn = $('#sv'); btn.disabled = true;
+  const amount = parseFloat($('#a').value), item = $('#it').value.trim();
+  const noAmt = !(amount > 0), noItem = !item;
+  $('#a').classList.toggle('err', noAmt); $('#it').classList.toggle('err', noItem);
+  $('#g').classList.toggle('err', !S.cat);
+  if (noAmt || noItem || !S.cat) return;
   try {
-    const r = await call({ action: 'addTransaction', token: S.token, category_id: S.cat,
-      item_name: $('#it').value, amount, date: $('#dt').value, note: $('#nt').value });
-    const d = S.data, it = r.item;
+    const r = await run('新增條目中…', () => call({ action: 'addTransaction', token: S.token,
+      category_id: S.cat, item_name: item, amount, date: $('#dt').value, note: $('#nt').value }));
+    const d = S.data, it = r.item, t = r.transaction, sg = t.type === 'income' ? 1 : -1;
     if (it) {
       const f = d.items.find(i => i.item_id === it.item_id);
       if (f) f.use_count = it.use_count;
       else d.items.push({ item_id: it.item_id, category_id: it.category_id, name: it.name, use_count: it.use_count });
-      d.items.sort((a, b) => b.use_count - a.use_count);
+      d.items.sort((x, y) => y.use_count - x.use_count);
     }
-    d.recent.unshift(r.transaction);
+    S.total += sg * t.amount;
+    const sp = span();
+    if (t.date >= sp.from && t.date <= sp.to) {            // 在目前區間內:更新統計並插入列表
+      S.sum[t.type] += t.amount; S.sum.balance += sg * t.amount;
+      const i = S.rows.findIndex(x => x.date <= t.date);
+      if (i >= 0) { S.rows.splice(i, 0, t); S.offset++; }
+      else if (!S.more) S.rows.push(t);
+    }
     ['a', 'it', 'nt'].forEach(k => $('#' + k).value = '');
-    toast('已儲存'); draw();
-  } catch (e) {
-    if (e.message === 'unauthorized') expire();
-    toast(msg(e));
-  }
-  btn.disabled = false;
+    draw(); drawLedger(); toast('已新增');
+  } catch (e) { if (e.message === 'unauthorized') return expire(); toast(msg(e)); }
 }
 
 S.token = store.get('t');
