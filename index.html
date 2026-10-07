@@ -56,9 +56,7 @@ input.amt{font-size:40px;font-weight:700;text-align:center;border:0;background:n
 <div id="t" role="status"></div>
 <script>
 
-const API = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
-  ? ''
-  : 'https://script.google.com/macros/s/AKfycbxV8NcqzHzyY9s1v6c-RC5_BNgy5FzFjGK6WKUzpL2M7fNFoJ16xn6sD64NLNvZlPxZpg/exec';
+const API = 'http://127.0.0.1:3000';
 const $ = s => document.querySelector(s);
 const app = $('#app');
 const S = { token: null, data: null, type: 'expense', cat: null, range: null,

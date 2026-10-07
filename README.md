@@ -27,7 +27,7 @@ npm run db:setup
 npm run start:dev
 ```
 
-瀏覽 `http://127.0.0.1:3000` 使用前端,或開啟 `http://127.0.0.1:3000/api/docs` 查看 Swagger。預設邀請碼為 `family-ledger-local`,正式部署前務必更改。
+瀏覽 `http://127.0.0.1:3000` 使用前端,或開啟 `http://127.0.0.1:3000/api/docs` 查看 Swagger。前端固定只呼叫本機 `http://127.0.0.1:3000`；使用 GitHub Pages 或其他前端網址時,也必須先在本機啟動後端。預設邀請碼為 `family-ledger-local`,正式部署前務必更改。
 
 若已匯入 `backend/prisma/dev.db` 的 SQL 資料,之後啟動時直接執行 `npm run start:dev`,不要再執行 `npm run db:setup`；Prisma 無法表達該 SQL 的 SQLite `COLLATE NOCASE` 與 `CHECK` 約束,重新同步 schema 可能移除這些約束。
 
@@ -60,7 +60,7 @@ npm run start:dev
 
 ## API
 
-所有請求都是 `POST <exec URL>`,body 為 JSON 字串,`Content-Type: text/plain`(刻意避開 CORS preflight,Apps Script 不處理 `OPTIONS`)。
+所有請求都是 `POST http://127.0.0.1:3000`,body 為 JSON 字串,`Content-Type: text/plain`。
 
 回應格式:
 
@@ -109,8 +109,8 @@ npm run start:dev
 2. 擴充功能 → Apps Script,貼上 `ledger_backend.gs`。
 3. 專案設定 → 指令碼屬性,新增 `INVITE_CODE`。
 4. 部署 → 網頁應用程式,執行身分「我」,存取權「所有人」。之後每次改程式要「管理部署作業 → 新版本」才會生效,網址不變。
-5. 把 `/exec` 網址填入 `index.html` 的 `API` 常數。
-6. 將 repo 的 `main` 分支開啟 GitHub Pages。
+5. 此前端不再呼叫 Apps Script；請改用上方說明啟動本機 NestJS 後端。
+6. 將 repo 的 `main` 分支開啟 GitHub Pages 時,頁面仍只會呼叫使用者本機的後端；後端 `CORS_ORIGINS` 必須允許頁面來源。
 
 ## 舊版已知問題 / 待辦
 
