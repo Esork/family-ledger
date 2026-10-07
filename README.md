@@ -3,29 +3,43 @@
 家庭共用記帳 Web App。手機/桌面瀏覽器使用,多人共用同一本帳。
 
 - 前端:單檔 `index.html`(原生 JS,無建置工具),部署在 GitHub Pages
-- 後端:Google Apps Script Web App(`ledger_backend.gs`)
-- 資料庫:Google Sheet(目前);規劃遷移到本地 DB(見最後一節)
+- 後端:TypeScript + NestJS,API 合約見 [`backend/SPEC.md`](backend/SPEC.md)
+- API 文件:Swagger UI (`/api/docs`)
+- 資料庫:Prisma + SQLite(本機開發);舊 Apps Script 與 Google Sheet 實作保留於 `ledger_backend.gs`
 
 ```
-Browser (GitHub Pages: index.html)
-   │  fetch POST, Content-Type: text/plain, body = JSON
+Browser (GitHub Pages or local NestJS server)
+   │  POST JSON (application/json or text/plain)
    ▼
-Apps Script Web App  (doPost → ACTIONS[action])
-   │  SpreadsheetApp / CacheService / LockService
-   ▼
-Google Sheet (Users, Sessions, Categories, Items, Transactions)
+NestJS action API  → Prisma → SQLite
+   └── Swagger UI: /api/docs
 ```
+
+## 本機啟動 NestJS 後端
+
+請參閱 [`backend/SPEC.md`](backend/SPEC.md) 的完整規格。在 Windows PowerShell 執行:
+
+```powershell
+cd backend
+Copy-Item .env.example .env
+npm install
+npm run db:setup
+npm run start:dev
+```
+
+瀏覽 `http://127.0.0.1:3000` 使用前端,或開啟 `http://127.0.0.1:3000/api/docs` 查看 Swagger。預設邀請碼為 `family-ledger-local`,正式部署前務必更改。
 
 ## Repo 結構
 
 | 檔案 | 說明 |
 |---|---|
 | `index.html` | 整個前端(HTML + CSS + JS) |
-| `ledger_backend.gs` | 整個後端(貼進 Apps Script 的 `Code.gs`) |
+| `backend/` | NestJS 後端、Prisma schema、SQLite 初始化與 API 規格 |
+| `ledger_backend.gs` | 舊版 Apps Script 後端(保留供參考) |
 
 > ⚠️ 不要把資料庫匯出檔(`*.sql`、`*.csv`)提交到 repo,裡面有使用者的密碼雜湊與全部帳目。請加進 `.gitignore`。
 
-## 資料模型(Google Sheet 分頁)
+## 舊版資料模型(Google Sheet 分頁)
 
 日期欄位以**純文字**儲存(`yyyy-MM-dd`),避免 Sheets 自動轉型。
 
@@ -87,7 +101,7 @@ Google Sheet (Users, Sessions, Categories, Items, Transactions)
 - 預設篩選區間為本月,也可指定日期範圍。新增帳目後在本地更新統計與列表,不重新請求。
 - 所有插入 HTML 的動態文字都經過 `esc()`。
 
-## 部署
+## 舊版 Apps Script 部署
 
 1. 建立 Google Sheet,依「資料模型」建立 5 個分頁與表頭(`Sessions` 4 欄)。repo 內沒有初始化腳本。
 2. 擴充功能 → Apps Script,貼上 `ledger_backend.gs`。
@@ -96,7 +110,7 @@ Google Sheet (Users, Sessions, Categories, Items, Transactions)
 5. 把 `/exec` 網址填入 `index.html` 的 `API` 常數。
 6. 將 repo 的 `main` 分支開啟 GitHub Pages。
 
-## 已知問題 / 待辦
+## 舊版已知問題 / 待辦
 
 - 沒有修改或刪除帳目的 API,更正錯誤只能直接改 Sheet。
 - 沒有修改密碼功能。
@@ -108,10 +122,8 @@ Google Sheet (Users, Sessions, Categories, Items, Transactions)
 - 分類與條目只能直接編輯 Sheet 管理。
 - Android(Pixel)上登入欄位長按空白鍵切換輸入法時鍵盤會消失,尚未找到原因。
 
-## 遷移到本地 DB 的備註
+## 本機資料
 
-- 保持上述 API 合約(action 名稱、參數、回應格式、錯誤碼),前端只需修改 `API` 網址。
-- 新伺服器需處理 CORS:允許 GitHub Pages 的 origin,並接受 `text/plain` 的 JSON body。
-- 沿用 `SHA-256(salt + password)` 即可讓現有使用者用原密碼登入;否則需要重設密碼。
-- `Sessions` 不需遷移,切換後所有人重新登入一次。
-- 日期維持 `yyyy-MM-dd` 文字;`created_at` 為 `yyyy-MM-dd HH:mm:ss`(Asia/Taipei)。
+- `backend/prisma/dev.db` 是本機資料庫，不要提交 DB 或匯出檔；帳號與帳目資料屬敏感資訊。
+- 本機 DB 與舊 Google Sheet 尚未自動同步或匯入；首次啟動需以邀請碼註冊新帳號。
+- API 保留舊 action 合約；在本機 NestJS 提供的網頁使用時，前端會呼叫同源 API。GitHub Pages 仍使用原 Apps Script URL。
