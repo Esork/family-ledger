@@ -55,7 +55,7 @@ export class AppService {
     const salt = randomUUID();
     const userId = `u${randomUUID().replace(/-/g, '').slice(0, 8)}`;
     const token = randomBytes(32).toString('hex');
-    const expiresAt = BigInt(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+    const expiresAt = Math.floor(Date.now() / 1000) + SESSION_DAYS * 24 * 60 * 60;
     const normalizedUsername = username.toLocaleLowerCase('en-US');
 
     try {
@@ -67,6 +67,7 @@ export class AppService {
             passwordHash: this.passwordHash(salt, password),
             salt,
             displayName,
+            createdAt: this.taipeiTimestamp(new Date()),
           },
         });
         await database.session.create({
@@ -98,7 +99,7 @@ export class AppService {
     }
 
     const token = randomBytes(32).toString('hex');
-    const expiresAt = BigInt(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+    const expiresAt = Math.floor(Date.now() / 1000) + SESSION_DAYS * 24 * 60 * 60;
     await this.prisma.session.create({
       data: { token, userId: user.userId, expiresAt },
     });
@@ -184,11 +185,11 @@ export class AppService {
       this.prisma.transaction.groupBy({
         by: ['type'],
         where: dateFilter,
-        _sum: { amountCents: true },
+        _sum: { amount: true },
       }),
       this.prisma.transaction.groupBy({
         by: ['type'],
-        _sum: { amountCents: true },
+        _sum: { amount: true },
       }),
     ]);
 
@@ -259,12 +260,13 @@ export class AppService {
           }
         | null = null;
       if (itemName) {
-        const existing = await database.item.findUnique({
-          where: {
-            categoryId_normalizedName: { categoryId, normalizedName },
-          },
+        const matchingItems = await database.item.findMany({
+          where: { categoryId },
         });
-        const now = BigInt(Date.now());
+        const existing = matchingItems.find(
+          (candidate) => this.itemKey(candidate.name) === normalizedName,
+        );
+        const now = Math.floor(Date.now() / 1000);
         if (existing) {
           const updated = await database.item.update({
             where: { itemId: existing.itemId },
@@ -277,7 +279,6 @@ export class AppService {
               itemId: `i${randomUUID().replace(/-/g, '').slice(0, 8)}`,
               categoryId,
               name: itemName,
-              normalizedName,
               createdBy: session.user.userId,
               useCount: 1,
               lastUsed: now,
@@ -295,8 +296,9 @@ export class AppService {
           type: category.type,
           categoryId,
           itemName: item?.name ?? '',
-          amountCents: BigInt(amountCentsNumber),
+          amount: amountCentsNumber / 100,
           note,
+          createdAt: this.taipeiTimestamp(new Date()),
         },
       });
       return { transaction, item };
@@ -318,7 +320,7 @@ export class AppService {
 
   private async loginResponse(
     token: string,
-    expiresAt: bigint,
+    expiresAt: number,
     user: { userId: string; displayName: string },
   ) {
     const [bootstrap, ledger] = await Promise.all([
@@ -327,7 +329,7 @@ export class AppService {
     ]);
     return {
       token,
-      expires_at: Number(expiresAt),
+      expires_at: expiresAt * 1000,
       user: { user_id: user.userId, display_name: user.displayName },
       bootstrap,
       ledger,
@@ -343,7 +345,7 @@ export class AppService {
       where: { token },
       include: { user: true },
     });
-    if (!session || session.expiresAt <= BigInt(Date.now())) {
+    if (!session || session.expiresAt <= Math.floor(Date.now() / 1000)) {
       throw new ApiError('unauthorized', 401);
     }
     return session;
@@ -408,18 +410,19 @@ export class AppService {
       user_id: transaction.userId,
       type: transaction.type,
       category_id: transaction.categoryId,
-      item_name: transaction.itemName,
-      amount: this.amount(transaction.amountCents),
-      note: transaction.note,
-      created_at: this.taipeiTimestamp(transaction.createdAt),
+      item_name: transaction.itemName ?? '',
+      amount: this.amount(BigInt(Math.round(transaction.amount * 100))),
+      note: transaction.note ?? '',
+      created_at: transaction.createdAt ?? '',
     };
   }
 
   private totalForType(
-    groups: Array<{ type: string; _sum: { amountCents: bigint | null } }>,
+    groups: Array<{ type: string; _sum: { amount: number | null } }>,
     type: string,
   ): bigint {
-    return groups.find((group) => group.type === type)?._sum.amountCents ?? 0n;
+    const amount = groups.find((group) => group.type === type)?._sum.amount ?? 0;
+    return BigInt(Math.round(amount * 100));
   }
 
   private amount(cents: bigint): number {

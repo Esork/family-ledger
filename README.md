@@ -29,6 +29,8 @@ npm run start:dev
 
 瀏覽 `http://127.0.0.1:3000` 使用前端,或開啟 `http://127.0.0.1:3000/api/docs` 查看 Swagger。預設邀請碼為 `family-ledger-local`,正式部署前務必更改。
 
+若已匯入 `backend/prisma/dev.db` 的 SQL 資料,之後啟動時直接執行 `npm run start:dev`,不要再執行 `npm run db:setup`；Prisma 無法表達該 SQL 的 SQLite `COLLATE NOCASE` 與 `CHECK` 約束,重新同步 schema 可能移除這些約束。
+
 ## Repo 結構
 
 | 檔案 | 說明 |

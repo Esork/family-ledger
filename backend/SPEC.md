@@ -43,14 +43,14 @@
 
 - 帳目依日期新到舊排序，同日依建立時間新到舊；採 offset 分頁，`has_more` 表示是否還有下一頁。
 - `summary` 是指定日期範圍的收入、支出與淨額；`total_balance` 是所有日期的收入減支出。
-- 金額以整數「分」儲存及計算，API 仍以數字元回傳、四捨五入至小數兩位。
+- 資料庫依匯入 SQL 以 `REAL` 儲存元；API 新增金額限制為精確至分，回傳時四捨五入至小數兩位。
 - 日期使用 `yyyy-MM-dd` 字串；預設新增日期及 `created_at` 顯示採 `Asia/Taipei`。
 - `type` 只由資料庫分類決定，不接受客戶端覆寫。
-- 條目為全體共用；以分類及 NFKC、小寫、移除空白後的名稱唯一識別。使用既有名稱會增加 `use_count`。
+- 條目為全體共用；新增時以分類及 NFKC、小寫、移除空白後的名稱尋找既有條目，找到時增加 `use_count`。
 
 ## 4. 驗證與錯誤
 
-帳號長度 2–20 字，密碼至少 6 字，帳號比對不區分大小寫。密碼沿用 Apps Script 的 `SHA-256(salt + password)` 格式，保持既有使用者資料相容；此格式不適用於新的公開服務部署，後續應規劃可遷移的慢速密碼雜湊。session 使用隨機 256-bit token，效期 30 天；每次受保護請求都檢查資料庫中的 session 與期限，登出立即撤銷。
+帳號長度 2–20 字，密碼至少 6 字，帳號比對不區分大小寫。密碼沿用 Apps Script 的 `SHA-256(salt + password)` 格式，保持既有使用者資料相容；此格式不適用於新的公開服務部署，後續應規劃可遷移的慢速密碼雜湊。session 使用隨機 256-bit token，效期 30 天；SQLite 以 epoch 秒儲存期限，API 的 `expires_at` 仍回傳 epoch 毫秒。每次受保護請求都檢查資料庫中的 session 與期限，登出立即撤銷。
 
 新增帳目要求有效日期、正數金額（精確至分）、存在的分類；條目最多 30 字、備註最多 100 字。分類與新增帳目寫入、條目使用次數更新均在資料庫交易中完成。
 
@@ -58,7 +58,7 @@ API 錯誤碼：`unknown_action`、`invalid_request`、`unauthorized`、`invalid
 
 ## 5. 資料表
 
-Prisma schema 建立 `users`、`sessions`、`categories`、`items`、`transactions`。使用者、session、分類與條目的欄位對應原有 Google Sheet 模型；帳目金額以 `amount_cents` 儲存，條目額外有正規化名稱唯一索引以避免多人同時新增重複條目。初始化會建立原專案使用的 12 個預設分類，不匯入包含真實帳號或帳目的歷史 SQL 備份。
+Prisma schema 對應 `family-ledger-1791349792475.sql` 的 `users`、`sessions`、`categories`、`items`、`transactions` 結構；帳目金額以 `REAL` 儲存，日期與時間欄位沿用 SQL 的文字格式。由於 Prisma 的 SQLite `Int` 是 32 位元，匯入時需將 SQL 中毫秒格式的 `last_used` 及既有 session 到期時間轉成 epoch 秒，API 的 `expires_at` 輸出則維持毫秒。匯入資料庫時須保留 SQL 定義的外鍵、索引及 SQLite 約束。`npm run db:setup` 只同步 schema 並執行 12 個預設分類的 upsert，不會匯入此 SQL 檔案。
 
 ## 6. 本機啟動
 
@@ -70,5 +70,7 @@ npm install
 npm run db:setup
 npm run start:dev
 ```
+
+SQL 匯入已建立並填入目前的 `dev.db`；之後啟動此資料庫時，直接執行 `npm run start:dev`，不要再執行 `npm run db:setup` 或 `prisma db push`。Prisma schema 無法表達 SQL 的 `COLLATE NOCASE` 與 `CHECK` 約束，重新 push 可能移除這些 SQLite 約束，並讓大小寫不同的既有帳號無法登入。
 
 開啟 `http://127.0.0.1:3000` 使用現有前端，或前往 `http://127.0.0.1:3000/api/docs` 查看及操作 API。若使用其他前端 origin，將其加入 `.env` 的 `CORS_ORIGINS`（逗號分隔），然後重啟伺服器。

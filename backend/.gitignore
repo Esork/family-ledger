@@ -3,5 +3,7 @@ dist/
 .env
 *.db
 *.db-journal
+*.db.backup-*
+prisma/family-ledger-*.sql
 coverage/
 *.tsbuildinfo

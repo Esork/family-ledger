@@ -13,9 +13,8 @@ model User {
   passwordHash String        @map("password_hash")
   salt         String
   displayName  String        @map("display_name")
-  createdAt    DateTime      @default(now()) @map("created_at")
+  createdAt    String?       @map("created_at")
   sessions     Session[]
-  items        Item[]
   transactions Transaction[]
 
   @@map("users")
@@ -24,10 +23,9 @@ model User {
 model Session {
   token     String @id
   userId    String @map("user_id")
-  expiresAt BigInt @map("expires_at")
+  expiresAt Int    @map("expires_at")
   user      User   @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
-  @@index([userId])
   @@map("sessions")
 }
 
@@ -35,8 +33,8 @@ model Category {
   categoryId   String        @id @map("category_id")
   name         String
   type         String
-  icon         String
-  sort         Int
+  icon         String?
+  sort         Int?
   items        Item[]
   transactions Transaction[]
 
@@ -44,18 +42,15 @@ model Category {
 }
 
 model Item {
-  itemId         String   @id @map("item_id")
-  categoryId     String   @map("category_id")
-  name           String
-  normalizedName String   @map("normalized_name")
-  createdBy      String?  @map("created_by")
-  useCount       Int      @default(0) @map("use_count")
-  lastUsed       BigInt?  @map("last_used")
-  category       Category @relation(fields: [categoryId], references: [categoryId])
-  creator        User?    @relation(fields: [createdBy], references: [userId], onDelete: SetNull)
+  itemId     String   @id @map("item_id")
+  categoryId String   @map("category_id")
+  name       String
+  createdBy  String?  @map("created_by")
+  useCount   Int      @default(0) @map("use_count")
+  lastUsed   Int?     @map("last_used")
+  category   Category @relation(fields: [categoryId], references: [categoryId])
 
-  @@unique([categoryId, normalizedName])
-  @@index([categoryId])
+  @@index([categoryId], map: "idx_items_category")
   @@map("items")
 }
 
@@ -65,14 +60,14 @@ model Transaction {
   userId     String   @map("user_id")
   type       String
   categoryId String   @map("category_id")
-  itemName   String   @map("item_name")
-  amountCents BigInt  @map("amount_cents")
-  note       String
-  createdAt  DateTime @default(now()) @map("created_at")
+  itemName   String?  @map("item_name")
+  amount     Float
+  note       String?
+  createdAt  String?  @map("created_at")
   user       User     @relation(fields: [userId], references: [userId])
   category   Category @relation(fields: [categoryId], references: [categoryId])
 
-  @@index([date, createdAt])
-  @@index([categoryId])
+  @@index([date], map: "idx_tx_date")
+  @@index([categoryId], map: "idx_tx_category")
   @@map("transactions")
 }
